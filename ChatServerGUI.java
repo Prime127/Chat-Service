@@ -17,6 +17,7 @@ public class ChatServerGUI {
     private JComboBox<String> chatRoomDropdown;
     private JTextArea messageArea;
     private ServerSocket serverSocket;
+    private JLabel statusLabel;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
@@ -27,7 +28,7 @@ public class ChatServerGUI {
     }
 
     public void createAndShowGUI() {
-        JFrame frame = new JFrame("Advanced Chat Server");
+        JFrame frame = new JFrame("Simple Chat Server by Group F");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(600, 400);
         frame.setLocationRelativeTo(null); // Center the frame on the screen
@@ -59,6 +60,10 @@ public class ChatServerGUI {
         controlPanel.add(startServerButton);
         controlPanel.add(stopServerButton);
 
+        statusLabel = new JLabel("Server Stopped");
+        statusLabel.setBorder(BorderFactory.createEtchedBorder());
+
+        JPanel topPanel = new JPanel(new GridLayout(1, 2));
         JPanel leftPanel = new JPanel(new BorderLayout());
         leftPanel.add(new JLabel("User List"), BorderLayout.NORTH);
         leftPanel.add(userScrollPane, BorderLayout.CENTER);
@@ -71,7 +76,6 @@ public class ChatServerGUI {
         rightPanel.add(new JLabel("Message History"), BorderLayout.NORTH);
         rightPanel.add(messageScrollPane, BorderLayout.CENTER);
 
-        JPanel topPanel = new JPanel(new GridLayout(1, 3));
         topPanel.add(leftPanel);
         topPanel.add(centerPanel);
         topPanel.add(rightPanel);
@@ -80,22 +84,29 @@ public class ChatServerGUI {
         frame.add(logScrollPane, BorderLayout.CENTER);
         frame.add(topPanel, BorderLayout.NORTH);
         frame.add(controlPanel, BorderLayout.SOUTH);
+        frame.add(statusLabel, BorderLayout.SOUTH);
 
         frame.setVisible(true);
     }
 
     public void startServer() {
-        try {
-            serverSocket = new ServerSocket(PORT);
-            log("Server started on port " + PORT);
+        new Thread(() -> {
+            try {
+                serverSocket = new ServerSocket(PORT);
+                updateStatus("Server started on port " + PORT);
 
-            while (true) {
-                Socket clientSocket = serverSocket.accept();
-                new ClientHandler(clientSocket).start();
+                while (true) {
+                    Socket clientSocket = serverSocket.accept();
+                    new ClientHandler(clientSocket).start();
+                }
+            } catch (IOException e) {
+                updateStatus("Error starting server: " + e.getMessage());
             }
-        } catch (IOException e) {
-            log("Error starting server: " + e.getMessage());
-        }
+        }).start();
+    }
+
+    private void updateStatus(String message) {
+        SwingUtilities.invokeLater(() -> statusLabel.setText(message));
     }
 
     private void updateUsersList() {
@@ -109,25 +120,26 @@ public class ChatServerGUI {
         });
     }
 
-    private void log(String message) {
-        SwingUtilities.invokeLater(() -> logArea.append(message + "\n"));
-    }
-
     private void stopServer() {
         try {
             if (serverSocket != null && !serverSocket.isClosed()) {
                 serverSocket.close();
-                log("Server stopped.");
+                updateStatus("Server stopped.");
             }
         } catch (IOException e) {
-            log("Error stopping server: " + e.getMessage());
+            updateStatus("Error stopping server: " + e.getMessage());
         }
+    }
+
+    private void log(String message) {
+        SwingUtilities.invokeLater(() -> logArea.append(message + "\n"));
     }
 
     class ClientHandler extends Thread {
         private Socket clientSocket;
         private BufferedReader reader;
         private PrintWriter writer;
+        private String username;
 
         public ClientHandler(Socket socket) {
             this.clientSocket = socket;
@@ -139,6 +151,22 @@ public class ChatServerGUI {
                 reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
                 writer = new PrintWriter(clientSocket.getOutputStream(), true);
 
+                // Prompt for username
+                writer.println("Enter your username:");
+                username = reader.readLine();
+                if (username == null || username.isEmpty() || userMap.containsKey(username)) {
+                    writer.println("Invalid username. Connection closed.");
+                    clientSocket.close();
+                    return;
+                }
+
+                userMap.put(username, clientSocket.getInetAddress().toString());
+                updateUsersList();
+                log(username + " has joined the chat.");
+
+                // Send welcome message
+                writer.println("Welcome to the chat, " + username + "!");
+
                 // Handle client messages
                 while (true) {
                     String message = reader.readLine();
@@ -147,12 +175,17 @@ public class ChatServerGUI {
                     }
 
                     // Handle messages from clients
-                    log("Received message: " + message);
+                    log(username + ": " + message);
                     // Process messages, send to other clients, etc.
                 }
             } catch (IOException e) {
                 log("Error handling client: " + e.getMessage());
             } finally {
+                if (username != null) {
+                    userMap.remove(username);
+                    updateUsersList();
+                    log(username + " has left the chat.");
+                }
                 try {
                     clientSocket.close();
                 } catch (IOException e) {

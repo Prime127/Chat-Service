@@ -13,6 +13,8 @@ public class ChatClientGUI {
     private Socket socket;
     private BufferedReader reader;
     private PrintWriter writer;
+    private JLabel statusLabel;
+    private String username;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
@@ -22,38 +24,35 @@ public class ChatClientGUI {
     }
 
     public void createAndShowGUI() {
-        JFrame frame = new JFrame("Chat Client By Group F");
+        JFrame frame = new JFrame("Simple Chat Client by Group F");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(600, 400);
+        frame.setLocationRelativeTo(null); // Center the frame on the screen
 
+        JPanel chatPanel = new JPanel(new BorderLayout());
         chatArea = new JTextArea();
         chatArea.setEditable(false);
         JScrollPane chatScrollPane = new JScrollPane(chatArea);
+        chatPanel.add(chatScrollPane, BorderLayout.CENTER);
 
+        JPanel messagePanel = new JPanel(new BorderLayout());
         messageField = new JTextField();
-        messageField.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                sendMessage();
-            }
-        });
-
+        messageField.setPreferredSize(new Dimension(400, 30));
+        messageField.addActionListener(e -> sendMessage());
         JButton sendButton = new JButton("Send");
-        sendButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                sendMessage();
-            }
-        });
-
-        JPanel messagePanel = new JPanel();
-        messagePanel.setLayout(new BorderLayout());
+        sendButton.addActionListener(e -> sendMessage());
         messagePanel.add(messageField, BorderLayout.CENTER);
         messagePanel.add(sendButton, BorderLayout.EAST);
 
-        frame.setLayout(new BorderLayout());
-        frame.add(chatScrollPane, BorderLayout.CENTER);
-        frame.add(messagePanel, BorderLayout.SOUTH);
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.add(chatPanel, BorderLayout.CENTER);
+        mainPanel.add(messagePanel, BorderLayout.SOUTH);
+
+        statusLabel = new JLabel("Client Disconnected");
+        statusLabel.setBorder(BorderFactory.createEtchedBorder());
+
+        frame.add(mainPanel);
+        frame.add(statusLabel, BorderLayout.SOUTH);
 
         frame.setVisible(true);
 
@@ -66,6 +65,12 @@ public class ChatClientGUI {
             reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             writer = new PrintWriter(socket.getOutputStream(), true);
 
+            updateStatus("Connected to Server");
+
+            // Prompt for username
+            getUsernameFromUser();
+
+            // Start a new thread to handle incoming messages
             new Thread(() -> {
                 try {
                     while (true) {
@@ -76,12 +81,24 @@ public class ChatClientGUI {
                         displayMessage(message);
                     }
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    updateStatus("Connection to Server Lost");
                 }
             }).start();
 
         } catch (IOException e) {
-            e.printStackTrace();
+            updateStatus("Failed to Connect to Server");
+        }
+    }
+
+    private void getUsernameFromUser() {
+        String input = JOptionPane.showInputDialog("Enter your username:");
+        if (input != null && !input.isEmpty()) {
+            username = input;
+            writer.println(username); // Send username to server for authentication
+            updateStatus("Username: " + username);
+        } else {
+            // If username is empty, close the connection
+            closeConnection();
         }
     }
 
@@ -95,6 +112,24 @@ public class ChatClientGUI {
     }
 
     private void displayMessage(String message) {
-        chatArea.append(message + "\n");
+        SwingUtilities.invokeLater(() -> {
+            chatArea.append(message + "\n");
+            chatArea.setCaretPosition(chatArea.getDocument().getLength());
+        });
+    }
+
+    private void updateStatus(String message) {
+        SwingUtilities.invokeLater(() -> statusLabel.setText(message));
+    }
+
+    private void closeConnection() {
+        try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+                updateStatus("Connection Closed");
+            }
+        } catch (IOException e) {
+            updateStatus("Error closing connection: " + e.getMessage());
+        }
     }
 }
